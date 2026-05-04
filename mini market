@@ -1,0 +1,180 @@
+import json, os, time
+from datetime import datetime
+
+# ---------- FILE HELPERS ----------
+def load_json(file, default):
+    if not os.path.exists(file):
+        save_json(file, default)
+    try:
+        with open(file, "r") as f:
+            return json.load(f)
+    except:
+        return default
+
+def save_json(file, data):
+    with open(file, "w") as f:
+        json.dump(data, f, indent=4)
+
+def log(user, text):
+    with open(f"history_{user}.log", "a") as f:
+        f.write(f"[{datetime.now()}] {text}\n")
+
+# ---------- DEFAULT DATA ----------
+users_file = "users.json"
+products_file = "products.json"
+
+users = load_json(users_file, [
+    {"username": "admin", "password": "1234", "balance": 100, "failed": 0, "lock": 0}
+])
+
+products = load_json(products_file, {
+    "Geyimlər": [
+        {"id":1,"name":"T-Shirt","price":12.5},
+        {"id":2,"name":"Hoodie","price":45},
+        {"id":3,"name":"Jeans","price":60}
+    ],
+    "Elektronika": [
+        {"id":1,"name":"Qulaqlıq","price":35},
+        {"id":2,"name":"Powerbank","price":25},
+        {"id":3,"name":"Siçan","price":15}
+    ]
+})
+
+# ---------- LOGIN ----------
+def login():
+    while True:
+        username = input("Username: ")
+        password = input("Password: ")
+
+        for u in users:
+            if u["username"] == username:
+                if time.time() < u["lock"]:
+                    print("🔒 Gözlə...")
+                    continue
+
+                if u["password"] == password:
+                    u["failed"] = 0
+                    save_json(users_file, users)
+                    log(username, "LOGIN_SUCCESS")
+                    return username
+                else:
+                    u["failed"] += 1
+                    log(username, "LOGIN_FAIL")
+                    if u["failed"] >= 3:
+                        u["lock"] = time.time() + 10
+                        u["failed"] = 0
+                        print("⏳ 10 saniyə gözlə")
+                    save_json(users_file, users)
+        print("Yanlış login")
+
+# ---------- BASKET ----------
+def basket_menu(user):
+    file = f"basket_{user}.json"
+    basket = load_json(file, [])
+
+    while True:
+        cmd = input("basket> ")
+
+        if cmd == "list":
+            total = 0
+            for i, item in enumerate(basket):
+                print(i, item)
+                total += item["line_total"]
+            print("TOTAL:", total)
+
+        elif cmd.startswith("remove"):
+            i = int(cmd.split()[1])
+            basket.pop(i)
+
+        elif cmd == "clear":
+            basket = []
+
+        elif cmd == "checkout":
+            total = sum(x["line_total"] for x in basket)
+
+            for u in users:
+                if u["username"] == user:
+                    if u["balance"] >= total:
+                        u["balance"] -= total
+                        log(user, f"CHECKOUT_SUCCESS {total}")
+                        basket = []
+                        print("✔ Alındı")
+                    else:
+                        log(user, "CHECKOUT_FAIL")
+                        print("❌ Balans çatmır")
+            save_json(users_file, users)
+
+        elif cmd == "back":
+            break
+
+        save_json(file, basket)
+
+# ---------- CATEGORY ----------
+def categories(user):
+    basket_file = f"basket_{user}.json"
+    basket = load_json(basket_file, [])
+
+    while True:
+        cats = list(products.keys())
+        for i,c in enumerate(cats):
+            print(i, c)
+
+        c = int(input("Seç: "))
+        cat = cats[c]
+
+        for p in products[cat]:
+            print(p["id"], p["name"], p["price"])
+
+        pid = int(input("ID: "))
+        qty = int(input("Qty: "))
+
+        for p in products[cat]:
+            if p["id"] == pid:
+                action = input("B/F/X: ")
+
+                if action == "B":
+                    basket.append({
+                        "category": cat,
+                        "product": p["name"],
+                        "unit": p["price"],
+                        "qty": qty,
+                        "line_total": qty*p["price"]
+                    })
+                    log(user, f"BASKET_ADD {p['name']} x{qty}")
+
+                elif action == "F":
+                    fav_file = f"favorites_{user}.json"
+                    fav = load_json(fav_file, [])
+                    fav.append(p)
+                    save_json(fav_file, fav)
+                    log(user, "FAVORITE_ADD")
+
+        save_json(basket_file, basket)
+
+        if input("exit? y/n: ") == "y":
+            break
+
+# ---------- MAIN ----------
+def main():
+    user = login()
+
+    while True:
+        print("\n1) Kateqoriyalar")
+        print("2) Səbət")
+        print("3) Balans")
+        print("0) Exit")
+
+        ch = input("Seç: ")
+
+        if ch == "1":
+            categories(user)
+        elif ch == "2":
+            basket_menu(user)
+        elif ch == "3":
+            for u in users:
+                if u["username"] == user:
+                    print("Balans:", u["balance"])
+        elif ch == "0":
+            break
+
+main()
